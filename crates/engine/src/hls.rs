@@ -137,7 +137,11 @@ fn parse_iv(raw: Option<&str>, media_sequence: u64) -> Result<[u8; 16], HlsError
             return Ok(iv);
         }
     }
-    Ok(media_sequence.to_be_bytes())
+    // RFC 8216: default IV is the media sequence number as a 128-bit
+    // big-endian value, i.e. 8 zero bytes followed by the sequence number.
+    let mut iv = [0u8; 16];
+    iv[8..].copy_from_slice(&media_sequence.to_be_bytes());
+    Ok(iv)
 }
 
 /// Downloads all segments (bounded concurrency), decrypting when needed.

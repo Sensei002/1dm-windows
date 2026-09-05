@@ -112,8 +112,8 @@ async fn download_range(
     // A fresh handle per worker; Rust std opens with full sharing on Windows,
     // so concurrent handles to the same file are fine.
     let mut file = tokio::fs::OpenOptions::new().write(true).open(dest).await?;
+    // Seek once; sequential write_all keeps the cursor advancing.
     file.seek(std::io::SeekFrom::Start(start)).await?;
-    let mut offset = start;
 
     loop {
         let Some(chunk) = resp.chunk().await? else { break };
@@ -122,7 +122,6 @@ async fn download_range(
             continue;
         }
         file.write_all(&chunk).await?;
-        offset += n;
         let _ = done.fetch_add(n, Ordering::Relaxed);
     }
     Ok(())
