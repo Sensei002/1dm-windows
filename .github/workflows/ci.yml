@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: ui
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: ui
+
+      - name: Rust checks
+        run: cargo check --workspace
+
+      - name: Full app build (no bundle)
+        run: npm --prefix ui run tauri -- build --no-bundle

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>1DM for Windows</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>1DM for Windows</h1>
+      <span class="badge">v0.1 scaffold</span>
+    </header>
+
+    <main>
+      <section class="panel">
+        <h2>New download</h2>
+        <form id="add-form" class="row">
+          <input id="url" type="text" placeholder="https://... (file, m3u8, mpd)" autocomplete="off" />
+          <input id="dest" type="text" value="downloads" placeholder="destination folder" autocomplete="off" />
+          <button id="add" type="submit">Download</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Downloads</h2>
+        <ul id="downloads" class="downloads"></ul>
+        <p id="empty" class="muted">Nothing yet — paste a link above.</p>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

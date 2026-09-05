@@ -1,0 +1,19 @@
+[package]
+name = "engine"
+version = "0.1.0"
+edition = "2021"
+description = "Multi-connection download engine: HTTP, HLS (m3u8), DASH (mpd)"
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "gzip", "brotli", "deflate", "charset"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+m3u8-rs = "7"
+url = "2"
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+hex = "0.4"
+thiserror = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }

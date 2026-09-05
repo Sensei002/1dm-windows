@@ -1,0 +1,19 @@
+# Rust
+target/
+src-tauri/target/
+**/*.rs.bk
+
+# Node
+node_modules/
+ui/dist/
+ui/node_modules/
+
+# Tauri generated
+src-tauri/gen/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
