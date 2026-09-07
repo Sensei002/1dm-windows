@@ -35,4 +35,4 @@ jobs:
         run: cargo check --workspace
 
       - name: Full app build (no bundle)
-        run: npm --prefix ui run tauri -- build --no-bundle
+        run: npm --prefix ui exec tauri -- build --no-bundle
