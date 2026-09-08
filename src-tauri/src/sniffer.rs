@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use engine::model::{Quality, StreamInfo};
 use tauri::{Emitter, Manager};
-use url::Url;
+use tauri::Url;
 
 /// Detected streams, newest first in [`Sniffer::list`].
 #[derive(Default)]
@@ -73,7 +73,7 @@ impl Sniffer {
 }
 
 fn title_for(page_url: &str, stream_url: &str) -> String {
-    let host = Url::parse(page_url)
+    let host = tauri::Url::parse(page_url)
         .ok()
         .and_then(|u| u.host_str().map(|h| h.to_string()))
         .unwrap_or_else(|| "stream".into());
@@ -271,7 +271,7 @@ fn intercept(
 
 /// Opens (or focuses) the embedded browser window at `url`.
 pub fn open_browser_impl(app: &tauri::AppHandle, url: &str) -> Result<String, String> {
-    let parsed = Url::parse(url.trim()).map_err(|e| format!("invalid url: {e}"))?;
+    let parsed = tauri::Url::parse(url.trim()).map_err(|e| format!("invalid url: {e}"))?;
     match parsed.scheme() {
         "http" | "https" => {}
         _ => return Err("only http(s) URLs can be opened".into()),
