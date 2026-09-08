@@ -289,6 +289,7 @@ pub fn open_browser_impl(app: &tauri::AppHandle, url: &str) -> Result<String, St
         return Ok("browser".into());
     }
 
+    let intercept_app = app.clone();
     tauri::WebviewWindowBuilder::new(
         app,
         "browser",
@@ -296,8 +297,8 @@ pub fn open_browser_impl(app: &tauri::AppHandle, url: &str) -> Result<String, St
     )
     .title("1DM Browser")
     .inner_size(1150.0, 800.0)
-    .on_web_resource_request(|request, response| {
-        intercept(&app, &request, response);
+    .on_web_resource_request(move |request, response| {
+        intercept(&intercept_app, &request, response);
     })
     .build()
     .map_err(|e| e.to_string())?;
