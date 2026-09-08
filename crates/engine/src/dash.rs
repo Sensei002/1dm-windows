@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
+use quick_xml::XmlVersion;
 use reqwest::Client;
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
@@ -716,7 +717,9 @@ fn attrs(e: &BytesStart) -> Vec<(String, String)> {
         .map(|a| {
             (
                 local_name(a.key.as_ref()),
-                a.normalized_value().map(|v| v.to_string()).unwrap_or_default(),
+                a.normalized_value(XmlVersion::V1_1)
+                    .map(|v| v.to_string())
+                    .unwrap_or_default(),
             )
         })
         .collect()
