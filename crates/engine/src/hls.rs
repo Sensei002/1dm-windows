@@ -99,8 +99,8 @@ pub async fn fetch_variants(client: &Client, playlist_url: &str) -> Result<HlsVa
             .join(&v.uri)
             .map_err(|e| HlsError::Playlist(e.to_string()))?
             .to_string();
-        let label = match v.resolution {
-            Some((_, h)) if h > 0 => format!("{h}p"),
+        let label = match v.resolution.map(|r| r.height) {
+            Some(h) if h > 0 => format!("{h}p"),
             _ => format!("{} kbps", v.bandwidth / 1000),
         };
         variants.push(Variant { label, url });
@@ -272,7 +272,7 @@ pub async fn download_segments(
     }
 
     // Resume: count segments that already exist on disk.
-    let mut done = Arc::new(AtomicU64::new(0));
+    let done = Arc::new(AtomicU64::new(0));
     let mut pending: Vec<(usize, &Segment)> = Vec::with_capacity(total);
     for (i, seg) in playlist.segments.iter().enumerate() {
         let path = dest_dir.join(segment_name(i));
@@ -341,7 +341,7 @@ pub async fn download_segments(
             Ok(Ok(())) => {
                 let _ = progress.send((done.load(Ordering::Relaxed), total as u64));
             }
-            Ok(Err(e)) if cancel.load(Ordering::Relaxed) => {
+            Ok(Err(_)) if cancel.load(Ordering::Relaxed) => {
                 // paused/cancelled: worker failed or aborted mid-flight
             }
             Ok(Err(e)) => return Err(e),

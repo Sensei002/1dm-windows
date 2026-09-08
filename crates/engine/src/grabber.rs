@@ -69,7 +69,7 @@ pub async fn grab_site(
         if next_selector.is_empty() {
             break;
         }
-        let doc = Document::from(&html);
+        let doc = Document::from(html.as_str());
         let Some(el) = doc.select(next_selector).iter().next() else { break };
         let Some(href) = el.attr("href") else { break };
         let Ok(base) = Url::parse(&url) else { break };

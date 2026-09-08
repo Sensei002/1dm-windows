@@ -494,7 +494,7 @@ fn resolve_template(
                 continue;
             }
             if let Some((name, width, consumed)) = parse_tag(&chars[i..]) {
-                match name {
+                match name.as_str() {
                     "RepresentationID" => out.push_str(&rep.id),
                     "Bandwidth" => out.push_str(&rep.bandwidth.to_string()),
                     "Number" => out.push_str(&pad(number, width)),
@@ -515,15 +515,17 @@ fn resolve_template(
 
 /// Recognizes `$Name$` or `$Name%0Nd$` at the start of `chars`; returns
 /// (name, zero-pad width, chars consumed).
-fn parse_tag(chars: &[char]) -> Option<(&str, usize, usize)> {
-    let rest: String = chars.iter().skip(1).collect();
-    let end = rest.find('$')?;
-    let tag = &rest[..end];
+fn parse_tag(chars: &[char]) -> Option<(String, usize, usize)> {
+    let end = chars
+        .iter()
+        .skip(1)
+        .position(|c| *c == '$')?;
+    let tag: String = chars[1..1 + end].iter().collect();
     let (name, width) = match tag.split_once('%') {
         Some((n, w)) => {
             let digits = w.strip_prefix('0')?;
             let width = digits.strip_suffix('d')?.parse::<usize>().ok()?;
-            (n, width)
+            (n.to_string(), width)
         }
         None => (tag, 0),
     };
@@ -552,7 +554,11 @@ pub fn parse_iso_duration(s: &str) -> Option<f64> {
         for c in text.chars() {
             if c.is_ascii_digit() || c == '.' {
                 num.push(c);
-            } else if let Some((_, scale)) = scales.iter().find(|(k, _)| *k == &c) {
+            } else if let Some(scale) = scales
+                .iter()
+                .find(|(k, _)| **k == c)
+                .map(|(_, s)| *s)
+            {
                 acc += num.parse::<f64>().unwrap_or(0.0) * scale;
                 num.clear();
             }
@@ -562,14 +568,14 @@ pub fn parse_iso_duration(s: &str) -> Option<f64> {
     let mut total = scan(
         date,
         &[
-            ('Y', 365.0 * 86400.0),
-            ('M', 30.0 * 86400.0),
-            ('W', 7.0 * 86400.0),
-            ('D', 86400.0),
+            (&'Y', 365.0 * 86400.0),
+            (&'M', 30.0 * 86400.0),
+            (&'W', 7.0 * 86400.0),
+            (&'D', 86400.0),
         ],
     );
     if let Some(t) = time {
-        total += scan(t, &[('H', 3600.0), ('M', 60.0), ('S', 1.0)]);
+        total += scan(t, &[(&'H', 3600.0), (&'M', 60.0), (&'S', 1.0)]);
     }
     if total > 0.0 { Some(total) } else { None }
 }
@@ -710,7 +716,7 @@ fn attrs(e: &BytesStart) -> Vec<(String, String)> {
         .map(|a| {
             (
                 local_name(a.key.as_ref()),
-                a.unescape_value().map(|v| v.to_string()).unwrap_or_default(),
+                a.normalized_value().map(|v| v.to_string()).unwrap_or_default(),
             )
         })
         .collect()
