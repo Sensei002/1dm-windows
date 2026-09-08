@@ -1,8 +1,8 @@
 [package]
 name = "engine"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Multi-connection download engine: HTTP, HLS (m3u8), DASH (mpd)"
+description = "Multi-connection download engine: HTTP, HLS (m3u8), DASH (mpd), torrents"
 
 [dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "gzip", "brotli", "deflate", "charset"] }
@@ -14,6 +14,9 @@ aes = "0.8"
 cbc = { version = "0.1", features = ["alloc"] }
 hex = "0.4"
 thiserror = "2"
+quick-xml = "0.41"
+dom_query = "0.27"
+librqbit = "9"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

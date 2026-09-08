@@ -7,26 +7,142 @@
   </head>
   <body>
     <header class="topbar">
-      <h1>1DM for Windows</h1>
-      <span class="badge">v0.1 scaffold</span>
+      <h1>1DM</h1>
+      <nav class="tabs" id="tabs">
+        <button class="tab active" data-tab="downloads">Downloads</button>
+        <button class="tab" data-tab="browser">Browser</button>
+        <button class="tab" data-tab="grabber">Grabber</button>
+        <button class="tab" data-tab="settings">Settings</button>
+      </nav>
+      <span class="badge">v0.2</span>
     </header>
 
     <main>
-      <section class="panel">
-        <h2>New download</h2>
-        <form id="add-form" class="row">
-          <input id="url" type="text" placeholder="https://... (file, m3u8, mpd)" autocomplete="off" />
-          <input id="dest" type="text" value="downloads" placeholder="destination folder" autocomplete="off" />
-          <button id="add" type="submit">Download</button>
-        </form>
+      <!-- ============ Downloads ============ -->
+      <section id="tab-downloads" class="tab-panel active">
+        <div class="panel">
+          <h2>New download</h2>
+          <form id="add-form" class="row">
+            <input id="url" type="text" placeholder="https://… file, .m3u8, .mpd, magnet: or .torrent" autocomplete="off" />
+            <input id="dest" type="text" placeholder="folder (optional)" autocomplete="off" />
+            <button id="add" type="submit">Download</button>
+          </form>
+          <details class="schedule">
+            <summary>Schedule…</summary>
+            <div class="row">
+              <input id="schedule-at" type="datetime-local" />
+              <button id="schedule-add" type="button">Schedule download</button>
+            </div>
+          </details>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Queue</h2>
+            <button id="clear-finished" class="ghost">Clear finished</button>
+          </div>
+          <ul id="downloads" class="downloads"></ul>
+          <p id="empty" class="muted">Nothing yet — paste a link above or browse and pick a stream.</p>
+        </div>
       </section>
 
-      <section class="panel">
-        <h2>Downloads</h2>
-        <ul id="downloads" class="downloads"></ul>
-        <p id="empty" class="muted">Nothing yet — paste a link above.</p>
+      <!-- ============ Browser ============ -->
+      <section id="tab-browser" class="tab-panel">
+        <div class="panel">
+          <h2>Embedded browser</h2>
+          <form id="browser-form" class="row">
+            <input id="browser-url" type="text" placeholder="https://… site to open in the app browser" autocomplete="off" />
+            <button type="submit">Open</button>
+          </form>
+          <p class="muted">Streams (.m3u8 / .mpd) the browser loads are detected automatically and appear below.</p>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Detected streams</h2>
+            <button id="clear-streams" class="ghost">Clear</button>
+          </div>
+          <ul id="streams" class="streams"></ul>
+          <p id="streams-empty" class="muted">No streams detected yet.</p>
+        </div>
+      </section>
+
+      <!-- ============ Grabber ============ -->
+      <section id="tab-grabber" class="tab-panel">
+        <div class="panel">
+          <h2>Website grabber</h2>
+          <form id="grab-form" class="row">
+            <input id="grab-url" type="text" placeholder="https://… page to scan for media links" autocomplete="off" />
+            <button type="submit">Scan</button>
+          </form>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Found links</h2>
+            <button id="grab-download" class="ghost" disabled>Download selected</button>
+          </div>
+          <ul id="grab-results" class="grab-results"></ul>
+          <p id="grab-empty" class="muted">Scan a page to find downloadable links.</p>
+        </div>
+      </section>
+
+      <!-- ============ Settings ============ -->
+      <section id="tab-settings" class="tab-panel">
+        <div class="panel">
+          <h2>General</h2>
+          <div class="setting-row">
+            <label for="set-theme">Theme</label>
+            <select id="set-theme">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <label for="set-concurrency">Parallel downloads</label>
+            <input id="set-concurrency" type="number" min="1" max="16" />
+          </div>
+          <div class="setting-row">
+            <label for="set-default-dir">Default download folder</label>
+            <input id="set-default-dir" type="text" placeholder="(system Downloads)" />
+          </div>
+        </div>
+        <div class="panel">
+          <h2>Features</h2>
+          <div class="setting-row">
+            <label for="set-clipboard">Clipboard link detection</label>
+            <input id="set-clipboard" type="checkbox" />
+          </div>
+          <div class="setting-row">
+            <label for="set-mp4">MP4 output for streams (ffmpeg)</label>
+            <input id="set-mp4" type="checkbox" />
+          </div>
+          <p class="muted">MP4 remux uses a portable ffmpeg that is downloaded on first use when no local ffmpeg is found.</p>
+        </div>
       </section>
     </main>
+
+    <!-- toast for clipboard detection -->
+    <div id="toast" class="toast hidden">
+      <span id="toast-text"></span>
+      <button id="toast-add">Add</button>
+      <button id="toast-close" class="ghost">✕</button>
+    </div>
+
+    <!-- DRM dialog -->
+    <div id="drm-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>DRM-protected stream</h3>
+        <p>
+          This stream is served with Widevine/PlayReady DRM. Like every
+          legitimate tool, 1DM can <b>play</b> it in the embedded browser but
+          <b>cannot download</b> it.
+        </p>
+        <div class="row modal-actions">
+          <button id="drm-play">Play in browser</button>
+          <button id="drm-close" class="ghost">Close</button>
+        </div>
+      </div>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

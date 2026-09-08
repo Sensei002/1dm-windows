@@ -1,8 +1,12 @@
-//! HLS (m3u8) support: playlist parsing, segment planning, downloading with
-//! AES-128 decryption. DASH (mpd) is planned in [`crate::dash`].
+//! HLS (m3u8) support: playlist parsing, quality variants, segment
+//! downloading with AES-128 decryption, resume and concat. DASH lives in
+//! [`crate::dash`].
 
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 
 use aes::Aes128;
 use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
@@ -10,6 +14,7 @@ use cbc::Decryptor;
 use m3u8_rs::{parse_master_playlist_res, parse_media_playlist_res, KeyMethod};
 use reqwest::Client;
 use thiserror::Error;
+use tokio::sync::mpsc::UnboundedSender;
 use url::Url;
 
 type Aes128Cbc = Decryptor<Aes128>;
@@ -26,6 +31,8 @@ pub enum HlsError {
     UnsupportedEncryption,
     #[error("decryption failed")]
     Decrypt,
+    #[error("cancelled")]
+    Cancelled,
 }
 
 /// A single media segment and how to decrypt it, if at all.
@@ -45,6 +52,78 @@ pub struct SegmentKey {
 pub struct HlsPlaylist {
     pub segments: Vec<Segment>,
     pub is_live: bool,
+}
+
+/// A selectable quality variant of a master playlist.
+#[derive(Debug, Clone)]
+pub struct Variant {
+    pub label: String,
+    pub url: String,
+}
+
+/// Master playlist listing with DRM detection, for the quality picker.
+#[derive(Debug)]
+pub struct HlsVariants {
+    pub is_drm: bool,
+    pub variants: Vec<Variant>,
+}
+
+/// Fetches a playlist URL and lists its quality variants. Detects
+/// SAMPLE-AES (DRM) playlists from the raw text.
+pub async fn fetch_variants(client: &Client, playlist_url: &str) -> Result<HlsVariants, HlsError> {
+    let bytes = client
+        .get(playlist_url)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+    let is_drm = raw_is_drm(&bytes);
+
+    if parse_media_playlist_res(&bytes).is_ok() {
+        return Ok(HlsVariants {
+            is_drm,
+            variants: vec![Variant {
+                label: "source".into(),
+                url: playlist_url.to_string(),
+            }],
+        });
+    }
+
+    let master = parse_master_playlist_res(&bytes)
+        .map_err(|e| HlsError::Playlist(format!("{e:?}")))?;
+    let base = Url::parse(playlist_url).map_err(|e| HlsError::Playlist(e.to_string()))?;
+    let mut variants = Vec::new();
+    for v in &master.variants {
+        let url = base
+            .join(&v.uri)
+            .map_err(|e| HlsError::Playlist(e.to_string()))?
+            .to_string();
+        let label = match v.resolution {
+            Some((_, h)) if h > 0 => format!("{h}p"),
+            _ => format!("{} kbps", v.bandwidth / 1000),
+        };
+        variants.push(Variant { label, url });
+    }
+    if variants.is_empty() {
+        return Err(HlsError::Playlist("master playlist has no variants".into()));
+    }
+    variants.sort_by_key(|v| std::cmp::Reverse(variant_height(&v.label)));
+    Ok(HlsVariants { is_drm, variants })
+}
+
+/// SAMPLE-AES means DRM (Widevine/PlayReady/FairPlay); AES-128 is plain HLS
+/// encryption and is downloadable.
+fn raw_is_drm(bytes: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(bytes);
+    text.to_uppercase().contains("METHOD=SAMPLE-AES")
+}
+
+fn variant_height(label: &str) -> u64 {
+    label
+        .strip_suffix('p')
+        .and_then(|n| n.parse::<u64>().ok())
+        .unwrap_or(0)
 }
 
 /// Fetches a playlist (following master → best variant) and resolves every
@@ -144,19 +223,35 @@ fn parse_iv(raw: Option<&str>, media_sequence: u64) -> Result<[u8; 16], HlsError
     Ok(iv)
 }
 
+/// Segment filename used inside `dest_dir` for index `i` (0-based).
+pub fn segment_name(i: usize) -> String {
+    format!("segment_{:05}.ts", i + 1)
+}
+
 /// Downloads all segments (bounded concurrency), decrypting when needed.
-/// Segments are written as `segment_00001.ts` etc. in `dest_dir`.
+/// Segments are written as `segment_00001.ts` etc. in `dest_dir`. Existing
+/// non-empty segment files are skipped, so an interrupted download resumes
+/// where it stopped. Progress `(done, total)` counts segments.
 pub async fn download_segments(
     client: &Client,
     playlist: &HlsPlaylist,
     dest_dir: &Path,
     max_concurrent: usize,
+    progress: UnboundedSender<(u64, u64)>,
+    cancel: Arc<AtomicBool>,
 ) -> Result<(), HlsError> {
     tokio::fs::create_dir_all(dest_dir).await?;
+    let total = playlist.segments.len();
+    if total == 0 {
+        return Err(HlsError::Playlist("playlist has no segments".into()));
+    }
 
     // Fetch and cache each distinct AES-128 key once.
     let mut key_cache: HashMap<String, [u8; 16]> = HashMap::new();
     for seg in &playlist.segments {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(HlsError::Cancelled);
+        }
         if let Some(key) = &seg.key {
             if !key_cache.contains_key(&key.key_url) {
                 let bytes = client
@@ -176,24 +271,49 @@ pub async fn download_segments(
         }
     }
 
-    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(
+    // Resume: count segments that already exist on disk.
+    let mut done = Arc::new(AtomicU64::new(0));
+    let mut pending: Vec<(usize, &Segment)> = Vec::with_capacity(total);
+    for (i, seg) in playlist.segments.iter().enumerate() {
+        let path = dest_dir.join(segment_name(i));
+        let exists = tokio::fs::metadata(&path)
+            .await
+            .map(|m| m.len() > 0)
+            .unwrap_or(false);
+        if exists {
+            done.fetch_add(1, Ordering::Relaxed);
+        } else {
+            pending.push((i, seg));
+        }
+    }
+    let _ = progress.send((done.load(Ordering::Relaxed), total as u64));
+
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(
         max_concurrent.clamp(1, 64),
     ));
     let mut set = tokio::task::JoinSet::new();
 
-    for (i, seg) in playlist.segments.iter().enumerate() {
+    for (i, seg) in pending {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
         let client = client.clone();
         let semaphore = semaphore.clone();
         let key_cache = key_cache.clone();
         let url = seg.url.clone();
         let key = seg.key.clone();
         let dest_dir = dest_dir.to_path_buf();
-        let name = format!("segment_{:05}.ts", i + 1);
+        let name = segment_name(i);
+        let done = done.clone();
+        let cancel = cancel.clone();
 
         set.spawn(async move {
             let _permit = semaphore.acquire_owned().await.map_err(|_| {
                 HlsError::Playlist("semaphore closed".into())
             })?;
+            if cancel.load(Ordering::Relaxed) {
+                return Err(HlsError::Cancelled);
+            }
             let bytes = client
                 .get(&url)
                 .send()
@@ -211,19 +331,51 @@ pub async fn download_segments(
                 None => bytes.to_vec(),
             };
             tokio::fs::write(dest_dir.join(&name), data).await?;
+            done.fetch_add(1, Ordering::Relaxed);
             Ok::<(), HlsError>(())
         });
     }
 
     while let Some(res) = set.join_next().await {
         match res {
-            Ok(Ok(())) => {}
+            Ok(Ok(())) => {
+                let _ = progress.send((done.load(Ordering::Relaxed), total as u64));
+            }
+            Ok(Err(e)) if cancel.load(Ordering::Relaxed) => {
+                // paused/cancelled: worker failed or aborted mid-flight
+            }
             Ok(Err(e)) => return Err(e),
             Err(e) => {
                 return Err(HlsError::Playlist(format!("worker panic: {e}")));
             }
         }
+        if cancel.load(Ordering::Relaxed) {
+            set.abort_all();
+            let _ = progress.send((done.load(Ordering::Relaxed), total as u64));
+            return Err(HlsError::Cancelled);
+        }
     }
+    let _ = progress.send((done.load(Ordering::Relaxed), total as u64));
+    if cancel.load(Ordering::Relaxed) {
+        return Err(HlsError::Cancelled);
+    }
+    Ok(())
+}
+
+/// Concatenates downloaded segment files in order into `out` (a valid MPEG-TS
+/// stream). Blocking I/O — call from `spawn_blocking`.
+pub fn concat_segments(dir: &Path, count: usize, out: &Path) -> std::io::Result<()> {
+    let mut file = std::fs::File::create(out)?;
+    let mut buf = Vec::new();
+    for i in 0..count {
+        buf.clear();
+        let path = dir.join(segment_name(i));
+        if std::fs::metadata(&path).map(|m| m.len() > 0).unwrap_or(false) {
+            buf = std::fs::read(&path)?;
+            file.write_all(&buf)?;
+        }
+    }
+    file.flush()?;
     Ok(())
 }
 

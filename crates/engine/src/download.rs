@@ -1,7 +1,7 @@
 //! Multi-connection HTTP file downloader (the 1DM-style "16 parts" engine).
 
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use reqwest::header::{CONTENT_LENGTH, RANGE};
@@ -17,23 +17,33 @@ pub enum DownloadError {
     Http(#[from] reqwest::Error),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("cancelled")]
+    Cancelled,
 }
 
 pub const DEFAULT_CONNECTIONS: usize = 16;
 const MAX_CONNECTIONS: usize = 32;
 
 /// Downloads `url` to `dest` using up to `connections` parallel range
-/// requests. Progress `(done, total)` is sent through `progress`.
+/// requests. Progress `(done, total)` is sent through `progress`. The
+/// download aborts with [`DownloadError::Cancelled`] once `cancel` is set.
 pub async fn download_file(
     client: &Client,
     url: &str,
     dest: &Path,
     connections: usize,
     progress: UnboundedSender<(u64, u64)>,
+    cancel: Arc<AtomicBool>,
 ) -> Result<(), DownloadError> {
+    if cancel.load(Ordering::Relaxed) {
+        return Err(DownloadError::Cancelled);
+    }
     let total = probe_size(client, url).await?;
     if total == 0 {
-        return stream_single(client, url, dest, progress).await;
+        return stream_single(client, url, dest, progress, cancel).await;
+    }
+    if cancel.load(Ordering::Relaxed) {
+        return Err(DownloadError::Cancelled);
     }
 
     // Preallocate so each worker writes at its own offset without coordination.
@@ -60,8 +70,9 @@ pub async fn download_file(
         let url = url.to_string();
         let dest = dest.to_path_buf();
         let done = done.clone();
+        let cancel = cancel.clone();
         set.spawn(async move {
-            download_range(&client, &url, &dest, start, end, done).await
+            download_range(&client, &url, &dest, start, end, done, &cancel).await
         });
     }
 
@@ -71,6 +82,10 @@ pub async fn download_file(
         tokio::select! {
             _ = interval.tick() => {
                 let _ = progress.send((done.load(Ordering::Relaxed), total));
+            }
+            _ = poll_cancel(&cancel), if cancel.load(Ordering::Relaxed) => {
+                set.abort_all();
+                return Err(DownloadError::Cancelled);
             }
             res = set.join_next(), if !set.is_empty() => {
                 match res {
@@ -101,6 +116,7 @@ async fn download_range(
     start: u64,
     end: u64,
     done: Arc<AtomicU64>,
+    cancel: &AtomicBool,
 ) -> Result<(), DownloadError> {
     let mut resp = client
         .get(url)
@@ -116,6 +132,9 @@ async fn download_range(
     file.seek(std::io::SeekFrom::Start(start)).await?;
 
     loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(DownloadError::Cancelled);
+        }
         let Some(chunk) = resp.chunk().await? else { break };
         let n = chunk.len() as u64;
         if n == 0 {
@@ -125,6 +144,16 @@ async fn download_range(
         let _ = done.fetch_add(n, Ordering::Relaxed);
     }
     Ok(())
+}
+
+/// Yields only when `cancel` flips — used in `select!` arms.
+async fn poll_cancel(cancel: &AtomicBool) {
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 }
 
 /// Best-effort size probe: HEAD first, fall back to a `bytes=0-0` range GET.
@@ -159,6 +188,7 @@ async fn stream_single(
     url: &str,
     dest: &Path,
     progress: UnboundedSender<(u64, u64)>,
+    cancel: Arc<AtomicBool>,
 ) -> Result<(), DownloadError> {
     let mut resp = client.get(url).send().await?;
     resp.error_for_status_ref()?;
@@ -166,6 +196,9 @@ async fn stream_single(
     let mut file = tokio::fs::File::create(dest).await?;
     let mut done: u64 = 0;
     while let Some(chunk) = resp.chunk().await? {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(DownloadError::Cancelled);
+        }
         file.write_all(&chunk).await?;
         done += chunk.len() as u64;
         let _ = progress.send((done, total));

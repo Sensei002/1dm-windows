@@ -6,19 +6,21 @@ shipped), stream detection, and a multi-connection download engine.
 
 ## Status
 
-v0.1 scaffold: project skeleton, download engine (multi-connection HTTP + HLS),
-Tauri 2 app shell, frontend, and the CI/CD pipeline that publishes versioned
-installers to GitHub Releases.
+v0.2: multi-connection HTTP engine, HLS (m3u8, AES-128) + DASH (mpd) stream
+downloading, embedded browser with stream sniffing + adblock, download queue
+with concurrency/scheduling/persistence, clipboard link detection, website
+grabber, BitTorrent support, MP4 output via ffmpeg, dark/light themes, and the
+CI/CD pipeline that publishes versioned installers to GitHub Releases.
 
 ## Roadmap
 
 | Phase | Contents |
 |-------|----------|
 | 0     | ✅ Scaffold + CI/CD (tag push → versioned GitHub Release) |
-| 1     | Embedded browser, stream detection (m3u8/mpd), download queue, MP4 output |
-| 2     | Multi-connection for regular files, clipboard link detection, quality picker |
-| 3     | Scheduler, batch/website grabber, torrents |
-| 4     | Polish: themes, in-browser adblock, "play protected content" permission dialog |
+| 1     | ✅ Embedded browser, stream detection (m3u8/mpd), download queue, MP4 output |
+| 2     | ✅ Multi-connection for regular files, clipboard link detection, quality picker |
+| 3     | ✅ Scheduler, batch/website grabber, torrents |
+| 4     | ✅ Polish: themes, in-browser adblock, "play protected content" permission dialog |
 
 ## DRM note
 
