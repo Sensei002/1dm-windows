@@ -55,7 +55,7 @@ pub fn start_clipboard_watcher(app: AppHandle) {
             if !enabled {
                 continue;
             }
-            let Ok(text) = Clipboard::new().and_then(|c| c.get_text()) else {
+            let Ok(text) = Clipboard::new().and_then(|mut c| c.get_text()) else {
                 continue;
             };
             if text.len() > 4096 {

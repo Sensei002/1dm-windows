@@ -198,7 +198,7 @@ fn is_ad(uri: &str) -> bool {
 /// The `on_web_resource_request` callback for browser windows.
 fn intercept(
     app: &tauri::AppHandle,
-    request: &tauri::http::Request<&[u8]>,
+    request: &tauri::http::Request<Vec<u8>>,
     response: &mut tauri::http::Response<std::borrow::Cow<'static, [u8]>>,
 ) {
     let uri = request.uri().to_string();
@@ -296,7 +296,7 @@ pub fn open_browser_impl(app: &tauri::AppHandle, url: &str) -> Result<String, St
     )
     .title("1DM Browser")
     .inner_size(1150.0, 800.0)
-    .on_web_resource_request(move |request, response| {
+    .on_web_resource_request(|request, response| {
         intercept(&app, request, response);
     })
     .build()

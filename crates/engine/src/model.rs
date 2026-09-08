@@ -23,6 +23,9 @@ pub struct DownloadTask {
     /// DASH representation id (`#rep=` fragment of a quality selection).
     #[serde(default)]
     pub rep_id: Option<String>,
+    /// Last error message when status is failed.
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 /// Emitted periodically while a download runs.

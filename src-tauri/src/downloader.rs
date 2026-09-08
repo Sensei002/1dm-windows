@@ -176,7 +176,7 @@ pub fn save_state(app: &AppHandle) {
             default_dir: inner.default_dir.clone(),
         }
     };
-    if let Ok(dir) = path.parent() {
+    if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
     if let Ok(json) = serde_json::to_string(&data) {
@@ -681,7 +681,14 @@ fn ensure_ffmpeg() -> Result<std::path::PathBuf, String> {
     {
         return Ok(PathBuf::from("ffmpeg"));
     }
-    ffmpeg_sidecar::download::auto_download().map_err(|e| format!("ffmpeg unavailable: {e}"))
+    ffmpeg_sidecar::download::auto_download()
+        .map_err(|e| format!("ffmpeg unavailable: {e}"))?;
+    let path = ffmpeg_sidecar::paths::ffmpeg_path();
+    if path.exists() {
+        Ok(path)
+    } else {
+        Err("ffmpeg binary not found after download".into())
+    }
 }
 
 // ---------------------------------------------------------------------------

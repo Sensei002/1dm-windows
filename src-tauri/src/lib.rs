@@ -2,8 +2,6 @@ mod clipboard;
 mod downloader;
 mod sniffer;
 
-use tauri::Manager;
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -30,16 +28,13 @@ pub fn run() {
             downloader::load_state(&handle);
             downloader::start_queue_worker(handle.clone());
             clipboard::start_clipboard_watcher(handle);
-            // Persist the queue when the app exits.
-            let exit_handle = app.handle().clone();
-            app.on_window_event(move |window, event| {
-                if let tauri::WindowEvent::Destroyed = event {
-                    downloader::save_state(&exit_handle);
-                }
-                let _ = window;
-            });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                downloader::save_state(app);
+            }
+        });
 }
