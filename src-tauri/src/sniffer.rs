@@ -157,7 +157,7 @@ const ADBLOCK_HOSTS: &[&str] = &[
 ];
 
 /// Headers worth replaying when the engine fetches the stream later.
-fn capture_headers(request: &tauri::http::Request<&[u8]>) -> HashMap<String, String> {
+fn capture_headers<T>(request: &tauri::http::Request<T>) -> HashMap<String, String> {
     let mut out = HashMap::new();
     let interesting = [
         "authorization",
@@ -297,7 +297,7 @@ pub fn open_browser_impl(app: &tauri::AppHandle, url: &str) -> Result<String, St
     .title("1DM Browser")
     .inner_size(1150.0, 800.0)
     .on_web_resource_request(|request, response| {
-        intercept(&app, request, response);
+        intercept(&app, &request, response);
     })
     .build()
     .map_err(|e| e.to_string())?;
